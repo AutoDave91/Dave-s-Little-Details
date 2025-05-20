@@ -1,0 +1,44 @@
+{
+    "name": "daves-little-details",
+    "title": "Dave's Little Details",
+    "description": "A set of useful macros for GMs and Players: Door Lock Status, Loot Generator, and 'He's Dead, Jim'.",
+    "version": "1.0.0",
+    "author": "AutoDave",
+    "minimumCoreVersion": "10",
+    "compatibleCoreVersion": "11",
+    "scripts": [
+        "main.js"
+    ],
+    "esmodules": [],
+    "styles": [],
+    "packs": [],
+    "relationships": {},
+    "url": "https://github.com/yourusername/daves-little-details",
+    "manifest": "https://yourdomain.com/modules/daves-little-details/module.json",
+    "download": "https://yourdomain.com/modules/daves-little-details.zip",
+    "flags": {},
+    "system": [],
+    "library": false,
+    "languages": [],
+    "license": "MIT",
+    "readme": "README.md",
+    "macros": [
+        {
+            "name": "Door Lock Status",
+            "type": "script",
+            "scope": "global",
+            "img": "icons/svg/door-closed.svg"
+        },
+        {
+            "name": "Loot Generator",
+            "type": "script",
+            "scope": "global"
+        },
+        {
+            "name": "He's Dead, Jim",
+            "type": "script",
+            "scope": "global",
+            "img": "icons/svg/skull.svg"
+        }
+    ]
+}
