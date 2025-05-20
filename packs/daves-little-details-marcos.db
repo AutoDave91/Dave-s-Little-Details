@@ -1,0 +1,341 @@
+| name              | type   | scope  | command                               | img                      |
+|-------------------|--------|--------|-------------------------------------|--------------------------|
+| Door Lock Status   | script | global | // === Door Check Macro with Right-Click + Token Proximity + Timeout ===
+
+// Avoid multiple listeners
+if (canvas._doorCheckListener) {
+    ui.notifications.warn("Already waiting for a right-click. Try again after clicking or timeout.");
+    return;
+}
+
+// Get selected token
+const token = canvas.tokens.controlled[0];
+if (!token) {
+    ui.notifications.warn("Please select a token first.");
+    return;
+}
+
+ui.notifications.info("Right-click near a door within 1 square of your selected token (15s timeout).");
+
+// === Distance Helpers ===
+function distanceToSegment(px, py, x1, y1, x2, y2) {
+    const A = px - x1, B = py - y1;
+    const C = x2 - x1, D = y2 - y1;
+    const dot = A * C + B * D;
+    const lenSq = C * C + D * D;
+    let param = -1;
+    if (lenSq !== 0) param = dot / lenSq;
+    let xx, yy;
+    if (param < 0) { xx = x1; yy = y1; }
+    else if (param > 1) { xx = x2; yy = y2; }
+    else { xx = x1 + param * C; yy = y1 + param * D; }
+    const dx = px - xx, dy = py - yy;
+    return Math.sqrt(dx * dx + dy * dy);
+}
+
+function highlightDoor(door) {
+    const highlight = canvas.effects.highlightDoors || canvas.highlightLayers?.doors;
+    if (!highlight) return;
+    highlight.highlight([door], {
+        color: 0xffff00,
+        alpha: 0.8,
+        duration: 1500
+    });
+}
+
+// === Cleanup Handler ===
+function cleanupListener() {
+    if (canvas._doorCheckListener) {
+        canvas.stage.off("rightdown", handleRightClick);
+        delete canvas._doorCheckListener;
+        if (canvas._doorCheckTimeout) {
+            clearTimeout(canvas._doorCheckTimeout);
+            delete canvas._doorCheckTimeout;
+        }
+    }
+}
+
+// === Right-click Handler ===
+function handleRightClick(event) {
+    cleanupListener();
+
+    const clickPos = event.data.getLocalPosition(canvas.stage);
+    const clickX = clickPos.x;
+    const clickY = clickPos.y;
+
+    // Proximity to token
+    const tokenCenter = token.center;
+    const dx = tokenCenter.x - clickX;
+    const dy = tokenCenter.y - clickY;
+    const distance = Math.hypot(dx, dy);
+    const gridSize = canvas.grid.size;
+    if (distance > gridSize) {
+        ui.notifications.warn("You must click within 1 square of your selected token.");
+        return;
+    }
+
+    // Filter valid doors
+    const doors = canvas.walls.placeables.filter(w => {
+        const d = w.document;
+        return d.door > 0 && d.door !== 2; // Not secret
+    });
+
+    // Find closest door to click
+    let closest = null;
+    let minDist = Infinity;
+    for (const wall of doors) {
+        const [x1, y1, x2, y2] = wall.document.c;
+        const dist = distanceToSegment(clickX, clickY, x1, y1, x2, y2);
+        if (dist < minDist) {
+            minDist = dist;
+            closest = wall;
+        }
+    }
+
+    if (!closest || minDist > gridSize) {
+        ui.notifications.warn("No door found near where you clicked.");
+        return;
+    }
+
+    highlightDoor(closest);
+    const isLocked = closest.document.ds === 2;
+    const status = isLocked ? "LOCKED" : "UNLOCKED";
+
+    ChatMessage.create({
+        content: `🗝️ <strong>Door Status:</strong> ${status}`
+    });
+}
+
+// === Setup Listener and Timeout ===
+canvas._doorCheckListener = true;
+canvas.stage.once("rightdown", handleRightClick);
+
+// Cancel after 15 seconds
+canvas._doorCheckTimeout = setTimeout(() => {
+    cleanupListener();
+    ui.notifications.warn("Door check canceled: no click received within 15 seconds.");
+}, 15000); | icons/svg/door-closed.svg |
+| Loot Generator    | script | global | (async () => {
+  // ==== USER INPUT ====
+  const maxBudget = await Dialog.prompt({
+    title: "Max Budget",
+    content: "<p>Enter max budget for loot:</p><input type='number' id='max-budget' value='750'/>",
+    callback: (html) => parseInt(html.find("#max-budget").val())
+  });
+
+  if (isNaN(maxBudget)) {
+    ui.notifications.error("Invalid input.");
+    return;
+  }
+
+  // Inform the user that loot generation has started
+  ui.notifications.info("Generating loot...");
+
+  let lootValueRemaining = maxBudget;
+
+  // ==== Load and Filter Compendium ====
+  const rarityRank = ["common", "uncommon", "rare", "unique"];
+  const rarityLimitIndex = rarityRank.indexOf("uncommon");
+
+  const pack = game.packs.get("pf2e.equipment-srd");
+  if (!pack) {
+    ui.notifications.error("Compendium 'pf2e.equipment-srd' not found.");
+    return;
+  }
+  await pack.getIndex();
+
+  const validItems = pack.index.contents;
+
+  if (!validItems.length) {
+    ui.notifications.warn("No items found in the compendium.");
+    return;
+  }
+
+  const lootItems = [];
+  const maxTries = 200;
+  let attempts = 0;
+
+  while (lootValueRemaining > 0 && attempts < maxTries) {
+    const entry = validItems[Math.floor(Math.random() * validItems.length)];
+    const item = await pack.getDocument(entry._id);
+
+    let rarityValue = item?.system?.traits?.rarity ?? "common";
+    let price = item?.system?.price?.value?.gp ?? 0;
+
+    // Skip items with rarity higher than limit
+    if (rarityRank.indexOf(rarityValue) > rarityLimitIndex) {
+      attempts++;
+      continue;
+    }
+
+    if (price > 0 && price <= lootValueRemaining) {
+      const itemData = item.toObject();
+
+      // Mystify if uncommon or higher
+      if (rarityRank.indexOf(rarityValue) >= rarityRank.indexOf("uncommon")) {
+        itemData.system.identification = {
+          status: "unidentified",
+          unidentified: {
+            name: "Unknown Item",
+            img: "systems/pf2e/icons/default-icons/unknown-item.svg"
+          }
+        };
+      }
+
+      lootItems.push(itemData);
+      lootValueRemaining -= price;
+    }
+    attempts++;
+  }
+
+  // ==== Create Loot Actor ====
+  const imgSrc = "https://assets.forge-vtt.com/bazaar/systems/pf2e/assets/icons/default-icons/loot.svg";
+
+  const lootActor = await Actor.create({
+    name: `Room Loot`,
+    type: "loot",
+    img: imgSrc,
+    system: {},
+    ownership: { default: 2 } // Set to Observer for all players
+  });
+
+  await lootActor.update({ "prototypeToken.img": imgSrc });
+
+  // ==== Drop Token (Loot Chest) ====
+  const center = canvas.scene._viewPosition;
+  const tokenData = {
+    name: lootActor.name,
+    actorId: lootActor.id,
+    x: center.x,
+    y: center.y,
+    img: imgSrc,
+    width: 1,
+    height: 1,
+    scale: 1,
+    vision: false,
+    actorLink: true,
+    disposition: 0,
+    locked: false,
+    hidden: false
+  };
+
+  await canvas.scene.createEmbeddedDocuments("Token", [tokenData]);
+
+  // ==== Add Items to Loot ====
+  if (lootItems.length > 0) {
+    await Item.createDocuments(lootItems, { parent: lootActor });
+  }
+
+  const spent = maxBudget - lootValueRemaining;
+  ui.notifications.info(`Loot generated: ${lootItems.length} items (~${spent} gp). Items of uncommon+ rarity are unidentified.`);
+})();   | icons/svg/chest.svg      |
+| He's Dead, Jim     | script | global | if (!game.user.isGM) {
+    ui.notifications.warn("Only the GM can run this loot conversion.");
+    return;
+}
+
+// Get all non-NPC tokens on the scene
+const tokens = canvas.tokens.placeables.filter(t => t.actor?.type !== "npc");
+
+if (tokens.length === 0) {
+    ui.notifications.warn("No non-NPC tokens found on the scene.");
+    return;
+}
+
+// Build dropdown options
+const options = tokens.map(t => `<option value="${t.id}">${t.name}</option>`).join("");
+
+new Dialog({
+    title: "Convert Token to Loot",
+    content: `
+    <p>Select a non-NPC token to convert into a loot actor:</p>
+    <select id="token-select" style="width:100%">${options}</select>
+  `,
+    buttons: {
+        ok: {
+            label: "Convert",
+            callback: async (html) => {
+                const tokenId = html.find("#token-select").val();
+                const token = canvas.tokens.get(tokenId);
+                if (!token) {
+                    ui.notifications.error("Selected token could not be found.");
+                    return;
+                }
+
+                const actor = token.actor;
+                if (!actor) {
+                    ui.notifications.error(`Token "${token.name}" has no actor.`);
+                    return;
+                }
+
+                // Prevent duplicate conversion
+                if (actor.getFlag("world", "lootConverted")) {
+                    ui.notifications.info(`${actor.name} has already been converted to loot.`);
+                    return;
+                }
+                await actor.setFlag("world", "lootConverted", true);
+
+                // Copy items and coins
+                const items = actor.items.map(item => item.toObject());
+                const coins = foundry.utils.deepClone(actor.system.currencies || actor.system.coinage || {});
+                console.log(items);
+
+                // Create loot actor with open permissions
+                const lootData = {
+                    name: `${actor.name}'s Loot`,
+                    type: "loot",
+                    img: actor.img,
+                    token: {
+                        name: `${actor.name}'s Loot`,
+                        img: token.texture.src,
+                        disposition: -1,
+                        actorLink: false,
+                        width: token.document.width,
+                        height: token.document.height,
+                        x: token.document.x,
+                        y: token.document.y
+                    },
+                    items: items,
+                    system: {
+                        coins: coins
+                    },
+                    ownership: {
+                        default: 2 // Everyone can observe/interact
+                    }
+                };
+
+                const lootActor = await Actor.create(lootData, { renderSheet: false });
+                if (!lootActor) {
+                    ui.notifications.error("Failed to create loot actor.");
+                    return;
+                }
+
+                console.log(lootActor);
+
+                // Drop loot token on canvas
+                const tokenData = lootActor.prototypeToken.toObject();
+                tokenData.actorId = lootActor.id;
+                tokenData.x = token.document.x;
+                tokenData.y = token.document.y;
+                tokenData.disposition = -1;
+                tokenData.actorLink = false;
+
+                await canvas.scene.createEmbeddedDocuments("Token", [tokenData]);
+
+                // Delete the original token
+                await token.document.delete();
+
+                // Post chat message
+                ChatMessage.create({
+                    speaker: { alias: "System" },
+                    content: `<strong>${actor.name}'s possessions have been dropped as loot.</strong>`,
+                    type: CONST.CHAT_MESSAGE_TYPES.OOC
+                });
+            }
+        },
+        cancel: {
+            label: "Cancel"
+        }
+    },
+    default: "ok"
+}).render(true);    | icons/svg/skull.svg      |
