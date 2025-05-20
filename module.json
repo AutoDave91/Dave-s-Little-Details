@@ -2,7 +2,7 @@
     "name": "daves-little-details",
     "title": "Dave's Little Details",
     "description": "A library of handy macros available in a compendium for GM and players.",
-    "version": "1.0.0",
+    "version": "1.2.0",
     "author": "AutoDave91",
     "minimumCoreVersion": "10",
     "compatibleCoreVersion": "11",
