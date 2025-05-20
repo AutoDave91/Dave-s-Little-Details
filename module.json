@@ -2,7 +2,7 @@
     "name": "daves-little-details",
     "title": "Dave's Little Details",
     "description": "A library of handy macros available in a compendium for GM and players.",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "author": "AutoDave91",
     "minimumCoreVersion": "10",
     "compatibleCoreVersion": "11",
@@ -13,7 +13,7 @@
         {
             "name": "daves-little-details-macros",
             "label": "Dave's Little Details Macros",
-            "path": "packs/daves-little-details-macros.db",
+            "path": "packs/daves-little-details-macros",
             "entity": "Macro",
             "type": "Macro",
             "package": "daves-little-details"
